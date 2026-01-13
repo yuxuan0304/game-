@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>老鷹抓小雞 - 勝利挑戰版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0fdf4;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            cursor: none;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            color: #166534;
+            z-index: 10;
+        }
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        .modal-content {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        button {
+            pointer-events: auto;
+            background: #22c55e;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 0.75rem;
+            font-weight: bold;
+            font-size: 1.25rem;
+            cursor: pointer;
+            margin-top: 1.5rem;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        button:hover {
+            background: #16a34a;
+            transform: scale(1.05);
+        }
+        #status-notice {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(220, 38, 38, 0.8);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 15;
+        }
+        .win-gradient {
+            background: linear-gradient(to bottom, #fef3c7, #ffffff);
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">
+    <h1 class="text-2xl font-bold">老鷹抓小雞：勝利挑戰</h1>
+    <div class="bg-white/50 p-2 rounded-lg inline-block mt-2 border border-green-200">
+        <p class="text-lg font-mono">得分: <span id="score">0</span></p>
+        <p class="text-sm font-bold">小雞: <span id="chick-count">5</span> / <span class="text-red-500">15 (獲勝)</span></p>
+        <p class="text-xs">老鷹速度: <span id="eagle-speed-ui">3.5</span></p>
+        <p class="text-xs mt-1">難度提升倒數: <span id="difficulty-countdown">10</span>s</p>
+    </div>
+</div>
+
+<!-- 開始選單 -->
+<div id="start-menu" class="overlay">
+    <div class="modal-content">
+        <h2 class="text-3xl font-bold text-green-700 mb-4">老鷹抓小雞</h2>
+        <div class="text-left text-gray-600 space-y-2 mb-6">
+            <p><strong>🏆 獲勝目標：</strong></p>
+            <p class="text-green-600 font-bold">成功帶領 15 隻小雞即可獲勝！</p>
+            <hr class="my-2">
+            <p><strong>📜 遊戲規則：</strong></p>
+            <ul class="list-disc list-inside text-sm">
+                <li>移動<b>母雞(🐔)</b>保護隊伍尾端。</li>
+                <li>避免<b>老鷹(🦅)</b>碰觸最後一隻小雞。</li>
+                <li>觸碰受困的<b>小雞(🐣)</b>可增加隊員。</li>
+                <li>每 10 秒提升難度，注意老鷹的<b>紅光暴衝</b>！</li>
+            </ul>
+        </div>
+        <button onclick="startGame()">開始挑戰</button>
+    </div>
+</div>
+
+<div id="status-notice">老鷹發動衝刺！</div>
+
+<!-- 遊戲結束畫面 -->
+<div id="game-over" class="overlay" style="display: none;">
+    <div class="modal-content">
+        <h2 class="text-3xl font-bold text-red-600">小雞被抓走了！</h2>
+        <p class="text-xl mt-4 text-gray-700">最終得分: <span id="final-score-lose">0</span></p>
+        <button onclick="startGame()">重新嘗試</button>
+    </div>
+</div>
+
+<!-- 勝利畫面 -->
+<div id="game-win" class="overlay" style="display: none;">
+    <div class="modal-content win-gradient">
+        <h2 class="text-3xl font-bold text-yellow-600">🎉 任務達成！</h2>
+        <p class="text-xl mt-2 text-green-700 font-bold">成功救回 15 隻小雞！</p>
+        <p class="text-md mt-4 text-gray-600">最終得分: <span id="final-score-win">0</span></p>
+        <button onclick="startGame()">再玩一次</button>
+    </div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreElement = document.getElementById('score');
+    const chickCountElement = document.getElementById('chick-count');
+    const eagleSpeedUI = document.getElementById('eagle-speed-ui');
+    const difficultyCountdownUI = document.getElementById('difficulty-countdown');
+    const gameOverScreen = document.getElementById('game-over');
+    const gameWinScreen = document.getElementById('game-win');
+    const startMenu = document.getElementById('start-menu');
+    const statusNotice = document.getElementById('status-notice');
+
+    let score = 0;
+    let gameActive = false;
+    let lastTime = 0;
+    let difficultyTimer = 0;
+    let skillTimer = 0;
+
+    const WIN_CHICK_COUNT = 15;
+    const HEN_RADIUS = 25;
+    const CHICK_RADIUS = 15;
+    const EAGLE_RADIUS = 30;
+    const SAVED_CHICK_RADIUS = 18;
+    const OBSTACLE_RADIUS = 40;
+    const TRAIL_DISTANCE = 35;
+    const DIFFICULTY_INTERVAL = 10;
+
+    let mouse = { x: 0, y: 0 };
+    let hen = { x: 0, y: 0 };
+    let chicks = [];
+    let eagle = { 
+        x: 0, 
+        y: 0, 
+        speed: 3.5, 
+        isDashing: false, 
+        dashCooldown: 6,
+        dashDuration: 1.5
+    };
+    let savedChicks = []; 
+    let obstacles = [];
+
+    function startGame() {
+        startMenu.style.display = 'none';
+        gameOverScreen.style.display = 'none';
+        gameWinScreen.style.display = 'none';
+        init();
+    }
+
+    function init() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        hen.x = canvas.width / 2;
+        hen.y = canvas.height / 2;
+        mouse.x = hen.x;
+        mouse.y = hen.y;
+
+        chicks = [];
+        for (let i = 0; i < 5; i++) {
+            chicks.push({ x: hen.x, y: hen.y + (i + 1) * TRAIL_DISTANCE });
+        }
+
+        eagle.x = 100;
+        eagle.y = 100;
+        eagle.speed = 3.5;
+        eagle.isDashing = false;
+        
+        savedChicks = [];
+        obstacles = [];
+        score = 0;
+        difficultyTimer = 0;
+        skillTimer = 0;
+        gameActive = true;
+        lastTime = performance.now();
+        
+        spawnObstacle();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function spawnSavedChick() {
+        savedChicks.push({
+            x: Math.random() * (canvas.width - 100) + 50,
+            y: Math.random() * (canvas.height - 100) + 50
+        });
+    }
+
+    function spawnObstacle() {
+        obstacles.push({
+            x: Math.random() * (canvas.width - 100) + 50,
+            y: Math.random() * (canvas.height - 100) + 50
+        });
+        if (obstacles.length > 6) obstacles.shift();
+    }
+
+    function triggerEagleDash() {
+        if (!gameActive || eagle.isDashing) return;
+        eagle.isDashing = true;
+        statusNotice.style.opacity = '1';
+        
+        setTimeout(() => {
+            eagle.isDashing = false;
+            statusNotice.style.opacity = '0';
+        }, eagle.dashDuration * 1000);
+    }
+
+    window.addEventListener('mousemove', (e) => {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+    });
+
+    window.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 0) {
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    function drawEntity(x, y, radius, emoji, bgColor = 'transparent', glow = false) {
+        if (glow) {
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = 'red';
+        }
+        if (bgColor !== 'transparent') {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = bgColor;
+            ctx.fill();
+        }
+        ctx.font = `${radius * 1.5}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(emoji, x, y);
+        ctx.shadowBlur = 0;
+    }
+
+    function update(deltaTime) {
+        if (!gameActive) return;
+
+        let deltaSeconds = deltaTime * 0.001;
+        score += deltaSeconds;
+        difficultyTimer += deltaSeconds;
+        skillTimer += deltaSeconds;
+        
+        scoreElement.innerText = Math.floor(score);
+        chickCountElement.innerText = chicks.length;
+        eagleSpeedUI.innerText = eagle.speed.toFixed(1);
+        difficultyCountdownUI.innerText = Math.max(0, Math.ceil(DIFFICULTY_INTERVAL - difficultyTimer));
+
+        // 檢查勝利條件
+        if (chicks.length >= WIN_CHICK_COUNT) {
+            winGame();
+            return;
+        }
+
+        if (difficultyTimer >= DIFFICULTY_INTERVAL) {
+            difficultyTimer = 0;
+            eagle.speed += 0.4;
+            if (Math.random() > 0.3) spawnSavedChick();
+            if (Math.random() > 0.4) spawnObstacle();
+        }
+
+        if (skillTimer >= eagle.dashCooldown) {
+            skillTimer = 0;
+            triggerEagleDash();
+        }
+
+        hen.x += (mouse.x - hen.x) * 0.15;
+        hen.y += (mouse.y - hen.y) * 0.15;
+
+        for (let i = savedChicks.length - 1; i >= 0; i--) {
+            let dx = hen.x - savedChicks[i].x;
+            let dy = hen.y - savedChicks[i].y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < HEN_RADIUS + SAVED_CHICK_RADIUS) {
+                savedChicks.splice(i, 1);
+                let last = chicks[chicks.length - 1];
+                chicks.push({ x: last.x, y: last.y });
+            }
+        }
+
+        let prevX = hen.x;
+        let prevY = hen.y;
+        for (let i = 0; i < chicks.length; i++) {
+            let dx = chicks[i].x - prevX;
+            let dy = chicks[i].y - prevY;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > TRAIL_DISTANCE) {
+                let angle = Math.atan2(dy, dx);
+                chicks[i].x = prevX + Math.cos(angle) * TRAIL_DISTANCE;
+                chicks[i].y = prevY + Math.sin(angle) * TRAIL_DISTANCE;
+            }
+            prevX = chicks[i].x;
+            prevY = chicks[i].y;
+        }
+
+        if (chicks.length > 0) {
+            let target = chicks[chicks.length - 1];
+            let tx = target.x - eagle.x;
+            let ty = target.y - eagle.y;
+            let distToTarget = Math.sqrt(tx * tx + ty * ty);
+            let currentSpeed = eagle.isDashing ? eagle.speed * 2.5 : eagle.speed;
+
+            eagle.x += (tx / distToTarget * currentSpeed);
+            eagle.y += (ty / distToTarget * currentSpeed);
+
+            let hdx = eagle.x - hen.x;
+            let hdy = eagle.y - hen.y;
+            if (Math.sqrt(hdx * hdx + hdy * hdy) < HEN_RADIUS + EAGLE_RADIUS) {
+                let angle = Math.atan2(hdy, hdx);
+                eagle.x = hen.x + Math.cos(angle) * (HEN_RADIUS + EAGLE_RADIUS + 20);
+                eagle.y = hen.y + Math.sin(angle) * (HEN_RADIUS + EAGLE_RADIUS + 20);
+            }
+
+            if (distToTarget < CHICK_RADIUS + EAGLE_RADIUS) {
+                if (chicks.length > 1) {
+                    chicks.pop();
+                    eagle.x -= (tx / distToTarget) * 150;
+                    eagle.y -= (ty / distToTarget) * 150;
+                    eagle.isDashing = false;
+                } else {
+                    endGame();
+                }
+            }
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#e8f5e9';
+        for(let i=50; i<canvas.width; i+=150) {
+            for(let j=50; j<canvas.height; j+=150) {
+                ctx.fillText('🌿', i, j);
+            }
+        }
+
+        for (let obs of obstacles) drawEntity(obs.x, obs.y, OBSTACLE_RADIUS, '🌳');
+        for (let sc of savedChicks) drawEntity(sc.x, sc.y, SAVED_CHICK_RADIUS, '🐣', 'rgba(255, 255, 255, 0.4)');
+
+        ctx.beginPath();
+        ctx.moveTo(hen.x, hen.y);
+        for (let chick of chicks) ctx.lineTo(chick.x, chick.y);
+        ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        for (let chick of chicks) drawEntity(chick.x, chick.y, CHICK_RADIUS, '🐥', 'rgba(254, 249, 195, 0.5)');
+        drawEntity(eagle.x, eagle.y, EAGLE_RADIUS, '🦅', 'transparent', eagle.isDashing);
+        if (eagle.isDashing) {
+            ctx.beginPath();
+            ctx.arc(eagle.x, eagle.y, EAGLE_RADIUS + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+        drawEntity(hen.x, hen.y, HEN_RADIUS, '🐔', 'rgba(255, 237, 213, 0.5)');
+    }
+
+    function winGame() {
+        gameActive = false;
+        document.getElementById('final-score-win').innerText = Math.floor(score);
+        gameWinScreen.style.display = 'flex';
+    }
+
+    function endGame() {
+        gameActive = false;
+        document.getElementById('final-score-lose').innerText = Math.floor(score);
+        gameOverScreen.style.display = 'flex';
+    }
+
+    function gameLoop(timestamp) {
+        if (!gameActive) return;
+        let deltaTime = timestamp - lastTime || 0;
+        lastTime = timestamp;
+        update(deltaTime);
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    window.onload = () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        draw();
+    };
+</script>
+
+</body>
+</html>
